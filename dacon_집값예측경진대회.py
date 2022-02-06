@@ -53,9 +53,6 @@ def feature_eng(data_):
   data['Cars*Area']=data['Garage Cars']*data['Garage Area']
   data['Year Gap Remod'] = data['Year Remod/Add'] - data['Year Built']
   data['Car Area'] = data['Garage Area']/data['Garage Cars']
-  data['New_Year Built']=2022-data['Year Built']
-  data['New_Year Remod/Add']=2022-data['Year Remod/Add']
-  data['New_Garage Yr Blt']=2022-data['Garage Yr Blt']
   data['2nd flr SF'] = data['Gr Liv Area'] - data['1st Flr SF']
   data['2nd flr'] = data['2nd flr SF'].apply(lambda x : 1 if x > 0 else 0)
   data['Total SF'] = data[['Gr Liv Area',"Garage Area", "Total Bsmt SF"]].sum(axis=1)
@@ -64,9 +61,6 @@ def feature_eng(data_):
   return data
 train = feature_eng(data)
 test = feature_eng(test)
-
-train=train.drop(['Year Built','Year Remod/Add','Garage Yr Blt'],axis=1)
-test=test.drop(['Year Built','Year Remod/Add','Garage Yr Blt'],axis=1)
 
 !pip3 install ngboost
 
