@@ -63,8 +63,10 @@ train = feature_eng(data)
 test = feature_eng(test)
 
 !pip3 install ngboost
+!pip3 install catboost
 
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from catboost import CatBoostRegressor, Pool
 from ngboost import NGBRegressor
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import KFold
@@ -87,6 +89,29 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
+from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
+
+# LinearRegression
+lr_pred = np.zeros(target.shape[0])
+lr_val = []
+for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
+    print(f'{n + 1} FOLD Training.....')
+    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
+    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
+    
+    lr = LinearRegression(normalize=True)
+    lr.fit(tr_x, tr_y)
+    
+    val_pred = np.expm1(lr.predict(val_x))
+    val_nmae = NMAE(val_y, val_pred)
+    lr_val.append(val_nmae)
+    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
+    
+    target_data = Pool(data = target, label = None)
+    fold_pred = lr.predict(target) / 10
+    lr_pred += fold_pred
+print(f'10FOLD Mean of NMAE = {np.mean(lr_val)} & std = {np.std(lr_val)}')
+
 # Ridge
 rg_pred = np.zeros(target.shape[0])
 rg_val = []
@@ -107,6 +132,48 @@ for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
     fold_pred = rg.predict(target) / 10
     rg_pred += fold_pred
 print(f'10FOLD Mean of NMAE = {np.mean(rg_val)} & std = {np.std(rg_val)}')
+
+# Lasso
+ls_pred = np.zeros(target.shape[0])
+ls_val = []
+for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
+    print(f'{n + 1} FOLD Training.....')
+    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
+    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
+    
+    ls = Lasso()
+    ls.fit(tr_x, tr_y)
+    
+    val_pred = np.expm1(ls.predict(val_x))
+    val_nmae = NMAE(val_y, val_pred)
+    ls_val.append(val_nmae)
+    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
+    
+    target_data = Pool(data = target, label = None)
+    fold_pred = ls.predict(target) / 10
+    ls_pred += fold_pred
+print(f'10FOLD Mean of NMAE = {np.mean(ls_val)} & std = {np.std(ls_val)}')
+
+# ElasticNet
+el_pred = np.zeros(target.shape[0])
+el_val = []
+for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
+    print(f'{n + 1} FOLD Training.....')
+    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
+    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
+    
+    el = ElasticNet()
+    el.fit(tr_x, tr_y)
+    
+    val_pred = np.expm1(el.predict(val_x))
+    val_nmae = NMAE(val_y, val_pred)
+    el_val.append(val_nmae)
+    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
+    
+    target_data = Pool(data = target, label = None)
+    fold_pred = el.predict(target) / 10
+    el_pred += fold_pred
+print(f'10FOLD Mean of NMAE = {np.mean(el_val)} & std = {np.std(el_val)}')
 
 # GradientBoostingRegressor
 gbr_pred = np.zeros(target.shape[0])
@@ -169,10 +236,34 @@ for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
     ngb_pred += fold_pred
 print(f'10FOLD Mean of NMAE = {np.mean(ngb_val)} & std = {np.std(ngb_val)}')
 
+# Catboost
+cb_pred = np.zeros(target.shape[0])
+cb_val = []
+for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
+    print(f'{n + 1} FOLD Training.....')
+    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
+    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
+    
+    tr_data = Pool(data = tr_x, label = tr_y)
+    val_data = Pool(data = val_x, label = val_y)
+    
+    cb = CatBoostRegressor(depth = 4, random_state = 42, loss_function = 'MAE', n_estimators = 3000, learning_rate = 0.03, verbose = 0)
+    cb.fit(tr_data, eval_set = val_data, early_stopping_rounds = 750, verbose = 1000)
+    
+    val_pred = np.expm1(cb.predict(val_x))
+    val_nmae = NMAE(val_y, val_pred)
+    cb_val.append(val_nmae)
+    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
+    
+    target_data = Pool(data = target, label = None)
+    fold_pred = cb.predict(target) / 10
+    cb_pred += fold_pred
+print(f'10FOLD Mean of NMAE = {np.mean(cb_val)} & std = {np.std(cb_val)}')
+
 # 검증 성능 확인하기
-val_list = [rg_val, gbr_val, rf_val, ngb_val]
+val_list = [lr_val, rg_val, ls_val, el_val, gbr_val, rf_val, ngb_val, cb_val]
 for val in val_list :
-  print("{:.8f}".format(np.mean(val)))
+  print("{:.8f}".format(np.mean(val))) 
 
 # submission 파일에 입력
 sub=pd.read_csv('/content/drive/MyDrive/housing/sample_submission.csv',sep=',',encoding="cp949")
