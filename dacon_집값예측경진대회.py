@@ -62,212 +62,76 @@ def feature_eng(data_):
 train = feature_eng(data)
 test = feature_eng(test)
 
-!pip3 install ngboost
-!pip3 install catboost
+from sklearn.preprocessing import RobustScaler, OneHotEncoder
+from sklearn.compose import make_column_transformer
+from sklearn.pipeline import Pipeline
 
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
-from catboost import CatBoostRegressor, Pool
-from ngboost import NGBRegressor
+X, y = train.drop(columns="target"), train["target"]
+
+scale_columns = ['Overall Qual', 'Gr Liv Area', 'Exter Qual', 'Garage Cars',
+       'Garage Area', 'Kitchen Qual', 'Total Bsmt SF', '1st Flr SF',
+       'Bsmt Qual', 'Full Bath', 'Year Built', 'Year Remod/Add',
+       'Garage Yr Blt', 'Overall Qual^2', 'Overall Qual^3',
+       'Bath*Area', 'base*1st', 'Gr Liv Area^2', 'Gr Liv Area^3', 'Cars*Area',
+       'Year Gap Remod', 'Car Area', '2nd flr SF', '2nd flr', 'Total SF',
+       'Sum Qual', 'Garage InOut']
+
+ct = make_column_transformer((RobustScaler(), scale_columns))
+
+def get_pipe(model, model_name: str) -> Pipeline:
+    pipe = Pipeline([
+        ("ct", ct),
+        (model_name, model)
+    ])
+    return pipe
+
+# NMAE 평가 함수 만들기
 from sklearn.metrics import make_scorer
-from sklearn.model_selection import KFold
 
-# 평가 기준 정의
-def NMAE(true, pred):
-    mae = np.mean(np.abs(true-pred))
+def NMAE(true, pred) -> float:
+    mae = np.mean(np.abs(true - pred))
     score = mae / np.mean(np.abs(true))
     return score
 
 nmae_score = make_scorer(NMAE, greater_is_better=False)
-kf = KFold(n_splits = 10, random_state =42, shuffle = True)#42
 
-X = train.drop(['target'], axis = 1)
-y = np.log1p(train.target)
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, HistGradientBoostingRegressor
 
-target = test[X.columns]
+models = [
+    ("gbr", GradientBoostingRegressor(random_state = 43, max_depth = 4, learning_rate = 0.03, n_estimators = 1000) ),
+    ("rfr", RandomForestRegressor(random_state = 42, criterion = 'absolute_error')),
+    ("hgb", HistGradientBoostingRegressor(random_state = 42, max_depth = 4, learning_rate = 0.03))
+]
 
-from sklearn.linear_model import Ridge
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
+model_pipes = [(name, get_pipe(model, name)) for name, model in models]
 
-from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
+#!pip install rich
+import rich
+from rich.table import Table
+from tqdm.auto import tqdm
+from sklearn.model_selection import cross_val_score
 
-# LinearRegression
-lr_pred = np.zeros(target.shape[0])
-lr_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    lr = LinearRegression(normalize=True)
-    lr.fit(tr_x, tr_y)
-    
-    val_pred = np.expm1(lr.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    lr_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    target_data = Pool(data = target, label = None)
-    fold_pred = lr.predict(target) / 10
-    lr_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(lr_val)} & std = {np.std(lr_val)}')
+table = Table()
+table.add_column("모델 이름", justify="left", style="green")
+table.add_column("NMAE", justify="right")
 
-# Ridge
-rg_pred = np.zeros(target.shape[0])
-rg_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    rg = Ridge()
-    rg.fit(tr_x, tr_y)
-    
-    val_pred = np.expm1(rg.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    rg_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    target_data = Pool(data = target, label = None)
-    fold_pred = rg.predict(target) / 10
-    rg_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(rg_val)} & std = {np.std(rg_val)}')
+for name, model in tqdm(model_pipes, leave=False):
+    nmae_list = cross_val_score(model, X, y, scoring=nmae_score)
+    nmae = -np.mean(nmae_list)
+    table.add_row(name, f"{nmae:.4f}")
 
-# Lasso
-ls_pred = np.zeros(target.shape[0])
-ls_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    ls = Lasso()
-    ls.fit(tr_x, tr_y)
-    
-    val_pred = np.expm1(ls.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    ls_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    target_data = Pool(data = target, label = None)
-    fold_pred = ls.predict(target) / 10
-    ls_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(ls_val)} & std = {np.std(ls_val)}')
+rich.print(table)
 
-# ElasticNet
-el_pred = np.zeros(target.shape[0])
-el_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    el = ElasticNet()
-    el.fit(tr_x, tr_y)
-    
-    val_pred = np.expm1(el.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    el_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    target_data = Pool(data = target, label = None)
-    fold_pred = el.predict(target) / 10
-    el_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(el_val)} & std = {np.std(el_val)}')
+from sklearn.ensemble import StackingRegressor
 
-# GradientBoostingRegressor
-gbr_pred = np.zeros(target.shape[0])
-gbr_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    gbr = GradientBoostingRegressor(random_state = 43, max_depth = 4, learning_rate = 0.03, n_estimators = 1000) 
-    gbr.fit(tr_x, tr_y)
-    
-    val_pred = np.expm1(gbr.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    gbr_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    fold_pred = gbr.predict(target) / 10
-    gbr_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(gbr_val)} & std = {np.std(gbr_val)}')
+stacking = StackingRegressor(model_pipes, n_jobs=-1)
+nmae_list = cross_val_score(stacking, X, y, scoring=nmae_score)
+nmae = -np.mean(nmae_list)
+print(nmae)
 
-# RandomForestRegressor
-rf_pred = np.zeros(target.shape[0])
-rf_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    rf = RandomForestRegressor(random_state = 42, criterion = 'absolute_error')#50
-    rf.fit(tr_x, tr_y)
-    
-    val_pred = np.expm1(rf.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    rf_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    fold_pred = rf.predict(target) / 10
-    rf_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(rf_val)} & std = {np.std(rf_val)}')
+stacking.fit(X, y)
+stack_pred = stacking.predict(test)
 
-# NGBRegressor
-ngb_pred = np.zeros(target.shape[0])
-ngb_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    ngb = NGBRegressor(random_state = 42, n_estimators = 1000, verbose = 0, learning_rate = 0.03) #1000
-    ngb.fit(tr_x, tr_y, val_x, val_y, early_stopping_rounds = 300)
-    
-    val_pred = np.expm1(ngb.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    ngb_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    target_data = Pool(data = target, label = None)
-    fold_pred = ngb.predict(target) / 10
-    ngb_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(ngb_val)} & std = {np.std(ngb_val)}')
-
-# Catboost
-cb_pred = np.zeros(target.shape[0])
-cb_val = []
-for n, (tr_idx, val_idx) in enumerate(kf.split(X, y)) :
-    print(f'{n + 1} FOLD Training.....')
-    tr_x, tr_y = X.iloc[tr_idx], y.iloc[tr_idx]
-    val_x, val_y = X.iloc[val_idx], np.expm1(y.iloc[val_idx])
-    
-    tr_data = Pool(data = tr_x, label = tr_y)
-    val_data = Pool(data = val_x, label = val_y)
-    
-    cb = CatBoostRegressor(depth = 4, random_state = 42, loss_function = 'MAE', n_estimators = 3000, learning_rate = 0.03, verbose = 0)
-    cb.fit(tr_data, eval_set = val_data, early_stopping_rounds = 750, verbose = 1000)
-    
-    val_pred = np.expm1(cb.predict(val_x))
-    val_nmae = NMAE(val_y, val_pred)
-    cb_val.append(val_nmae)
-    print(f'{n + 1} FOLD NMAE = {val_nmae}\n')
-    
-    target_data = Pool(data = target, label = None)
-    fold_pred = cb.predict(target) / 10
-    cb_pred += fold_pred
-print(f'10FOLD Mean of NMAE = {np.mean(cb_val)} & std = {np.std(cb_val)}')
-
-# 검증 성능 확인하기
-val_list = [lr_val, rg_val, ls_val, el_val, gbr_val, rf_val, ngb_val, cb_val]
-for val in val_list :
-  print("{:.8f}".format(np.mean(val))) 
-
-# submission 파일에 입력
 sub=pd.read_csv('/content/drive/MyDrive/housing/sample_submission.csv',sep=',',encoding="cp949")
-sub['target'] = np.expm1((ngb_pred + rf_pred + rg_pred + gbr_pred) / 4)
-sub['target']
-
-sub.to_csv('dacon_file.csv',index=False)
+sub["target"] = stack_pred
+sub.to_csv("submission.csv", index=False) 
