@@ -45,12 +45,8 @@ test = label_encoder(test, qual_cols)
 def feature_eng(data_):
   data = data_.copy()
   data['Overall Qual^2']=data['Overall Qual']*data['Overall Qual']
-  data['Overall Qual^3']=data['Overall Qual']*data['Overall Qual']*data['Overall Qual']
-  data['Bath*Area']=data['Full Bath']*data['Gr Liv Area'] 
   data['base*1st']=data['Total Bsmt SF']*data['1st Flr SF']
   data['Gr Liv Area^2']=data['Gr Liv Area']*data['Gr Liv Area']
-  data['Gr Liv Area^3']=data['Gr Liv Area']*data['Gr Liv Area']*data['Gr Liv Area']
-  data['Cars*Area']=data['Garage Cars']*data['Garage Area']
   data['Year Gap Remod'] = data['Year Remod/Add'] - data['Year Built']
   data['Car Area'] = data['Garage Area']/data['Garage Cars']
   data['2nd flr SF'] = data['Gr Liv Area'] - data['1st Flr SF']
@@ -62,6 +58,12 @@ def feature_eng(data_):
 train = feature_eng(data)
 test = feature_eng(test)
 
+#상관관계분석(Heatmap) 그리기
+column_names = train.select_dtypes(exclude=['object']).columns
+fig = plt.figure(figsize = (25,20))
+sns.heatmap(train[column_names].corr(), annot = True)
+plt.show() #0.8 이상
+
 from sklearn.preprocessing import RobustScaler, OneHotEncoder
 from sklearn.compose import make_column_transformer
 from sklearn.pipeline import Pipeline
@@ -69,12 +71,11 @@ from sklearn.pipeline import Pipeline
 X, y = train.drop(columns="target"), train["target"]
 
 scale_columns = ['Overall Qual', 'Gr Liv Area', 'Exter Qual', 'Garage Cars',
-       'Garage Area', 'Kitchen Qual', 'Total Bsmt SF', '1st Flr SF',
-       'Bsmt Qual', 'Full Bath', 'Year Built', 'Year Remod/Add',
-       'Garage Yr Blt', 'Overall Qual^2', 'Overall Qual^3',
-       'Bath*Area', 'base*1st', 'Gr Liv Area^2', 'Gr Liv Area^3', 'Cars*Area',
-       'Year Gap Remod', 'Car Area', '2nd flr SF', '2nd flr', 'Total SF',
-       'Sum Qual', 'Garage InOut']
+       'Kitchen Qual', 'Total Bsmt SF', '1st Flr SF',
+       'Bsmt Qual', 'Full Bath','Year Remod/Add',
+       'Garage Yr Blt', 'Overall Qual^2',
+       'base*1st', 'Gr Liv Area^2', 'Car Area', 
+       '2nd flr SF', '2nd flr', 'Total SF','Sum Qual', 'Garage InOut']
 
 ct = make_column_transformer((RobustScaler(), scale_columns))
 
